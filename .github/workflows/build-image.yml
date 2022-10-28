@@ -26,7 +26,7 @@ jobs:
                         - name: Building images
                           run: |
                                 cd kommet-docker-repo
-                                cp ../kommet-repo/target/rm-1.0.war images/collective
+                                cp ../kommet-repo/target/km-1.0.war images/collective
                                 cd images/collective
                                 ./build-image.sh "mockpwd" "kommet/kommet-standalone:latest"
 
