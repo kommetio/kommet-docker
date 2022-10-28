@@ -28,6 +28,7 @@ jobs:
                                 cd kommet-docker-repo
                                 cp ../kommet-repo/target/km-1.0.war images/collective
                                 cd images/collective
+                                chmod 777 build-image.sh
                                 ./build-image.sh "mockpwd" "kommet/kommet-standalone:latest"
 
                         - name: Log in to Docker Hub

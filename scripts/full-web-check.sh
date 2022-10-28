@@ -1,7 +1,7 @@
 #! /bin/bash
 
 # Make sure Tomcat is up
-processes=$(docker exec rm-tomcat ps ax | grep "tomcat")
+processes=$(docker exec km-tomcat ps ax | grep "tomcat")
 
 if [[ ! "$processes" =~ ^.*tomcat.*$ ]]; then
 	echo "Tomcat is not up"
