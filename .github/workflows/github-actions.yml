@@ -1,0 +1,193 @@
+name: Project Build
+on: [push]
+jobs:
+        build-containers:
+                runs-on: ubuntu-latest
+                steps:
+                        - uses: actions/checkout@v2
+                        - name: Building images
+                          run: KM_VOLUME=./volumes KM_APP_NAME=rm KM_TOMCAT_PORT=8000 KM_HTTPD_PORT=8001 KM_DB_PORT=5000 docker-compose build
+                        - name: Starting containers
+                          run: KM_VOLUME=./volumes KM_APP_NAME=rm KM_TOMCAT_PORT=8000 KM_HTTPD_PORT=8001 KM_DB_PORT=5000 docker-compose up -d
+                        - name: Setting password env var
+                          # setting env var must be done in a separate step then using it
+                          run: echo "KM_DB_PWD=$(echo "mockpwd" | cut -c 1-6)" >> $GITHUB_ENV
+                        - name: Initializing databases
+                          run: |
+                            chmod 777 ./scripts/init-new-env.sh
+                            # the env var is not visible inside the script if it's not passed as argument
+                            ./scripts/init-new-env.sh ${KM_DB_PWD} "0010000000002" "rm"
+                        - run: echo "Running Tomcat healthcheck"
+                        - run: chmod 777 ./scripts/web-healthcheck.sh
+                        - run: ./scripts/web-healthcheck.sh
+                        - name: Sign in to Github container registry
+                          run: |
+                            echo $GHRC_ACCESS_TOKEN | docker login ghcr.io -u kommetio --password-stdin
+                          env:
+                            GHRC_ACCESS_TOKEN: ${{ secrets.GHRC_ACCESS_TOKEN }}
+                        - name: Push images to container registry
+                          run: |
+                              docker push ghcr.io/kommetio/rm-tomcat:latest
+                              docker push ghcr.io/kommetio/rm-db:latest
+                              docker push ghcr.io/kommetio/rm-httpd:latest
+
+        build-rm-app:
+                runs-on: ubuntu-latest
+                steps:
+                        - name: build-kommet-app
+                          uses: actions/checkout@v2
+                          with:
+                                repository: kommetio/kommet
+                                ref: refs/tags/latest-build
+                                token: ${{ secrets.KOMMET_REPO_TOKEN }}
+                        - run: echo "Building app from source"
+                        - run: mvn package -DskipTests=true
+                        - name: Cache built artifact
+                          uses: actions/cache@v3
+                          env:
+                                cache-name: cache-rm-app
+                          with:
+                                path: ./target/km-1.0.war
+                                key: latest-app-build-${{ github.run_id }}-${{ github.run_attempt }}
+
+        test-build:
+                runs-on: ubuntu-latest
+                needs: [build-containers, build-rm-app]
+                steps:
+                        # note the checkout has to be performed before the artifact is downloaded because the checkout action deletes the working dir
+                        - uses: actions/checkout@v2
+                        - name: Create dir to restore cache
+                          run: mkdir target
+                        - name: Get artifact from cache
+                          uses: actions/cache@v3
+                          env:
+                                cache-name: cache-rm-app
+                          with:
+                                # note: the path used in the job that restores the cache has to be the same
+                                # as the path from which cache is uploaded - this is why we needed to create the target dir
+                                path: ./target/km-1.0.war
+                                key: latest-app-build-${{ github.run_id }}-${{ github.run_attempt }}
+
+                        - name: Sign in to Github container registry
+                          run: |
+                            echo $GHRC_ACCESS_TOKEN | docker login ghcr.io -u kommetio --password-stdin
+                          env:
+                            GHRC_ACCESS_TOKEN: ${{ secrets.GHRC_ACCESS_TOKEN }}
+
+                        - name: Pull Docker images
+                          run: |
+                              docker pull ghcr.io/kommetio/rm-tomcat:latest
+                              docker pull ghcr.io/kommetio/rm-db:latest
+                              docker pull ghcr.io/kommetio/rm-httpd:latest
+
+                        - name: Starts all containers
+                          run: |
+                              # copy docker-compose.yaml to a new dir to make sure it does not use Dockerfiles to build the images
+                              # but instead pulls them from registry by image name
+
+                              mkdir clean-run
+                              cp docker-compose.yaml clean-run
+                              cd clean-run
+
+                              mkdir ../volumes/bin
+                              cp ../target/km-1.0.war ../volumes/bin/km-1.0.war
+
+                              KM_VOLUME=../volumes KM_DB_PWD=mockpwd KM_APP_NAME=rm KM_TOMCAT_PORT=8000 KM_HTTPD_PORT=8001 KM_DB_PORT=5000 docker compose pull
+                              KM_VOLUME=../volumes KM_DB_PWD=mockpwd KM_APP_NAME=rm KM_TOMCAT_PORT=8000 KM_HTTPD_PORT=8001 KM_DB_PORT=5000 docker compose up -d
+
+                        - name: Setting password env var
+                          # setting env var must be done in a separate step then using it
+                          run: |
+                            echo "KM_DB_PWD=$(echo "mockpwd")" >> $GITHUB_ENV
+                            echo "KM_APP_NAME=$(echo "rm")" >> $GITHUB_ENV
+
+                        - name: Initializing databases
+                          run: |
+                            chmod 777 ./scripts/init-new-env.sh
+                            echo "Password ${KM_DB_PWD}"
+                            # the env var is not visible inside the script if it's not passed as argument
+                            ./scripts/init-new-env.sh ${KM_DB_PWD} "0010000000002" "rm"
+
+                        - name: Set database password in Tomcat containers
+                          run: docker exec ${KM_APP_NAME}-tomcat bash -c "export KM_DB_PWD=mockpwd; echo \$KM_DB_PWD"
+
+                        # give Tomcat some time to start
+                        - name: Sleep for 10 seconds
+                          run: sleep 10s
+                          shell: bash
+
+                        - name: Debug Tomcat
+                          run: |
+                            docker exec ${KM_APP_NAME}-tomcat /bin/bash -c "PGPASSWORD=mockpwd psql -h rm-db -d kolmu -p 5432 -U kolmuapp -c 'select count(*) from envs;'"
+                            docker exec ${KM_APP_NAME}-tomcat curl localhost:8080
+                            docker exec ${KM_APP_NAME}-tomcat cat /usr/local/tomcat/logs/catalina.out
+
+                        - name: Web health check
+                          run: |
+                              chmod 777 ./scripts/full-web-check.sh
+                              chmod 777 ./scripts/web-healthcheck.sh
+                              ./scripts/web-healthcheck.sh
+                              ./scripts/full-web-check.sh
+        test-install:
+                runs-on: ubuntu-latest
+                needs: [build-containers, build-rm-app]
+                steps:
+                        # note the checkout has to be performed before the artifact is downloaded because the checkout action deletes the working dir
+                        - uses: actions/checkout@v2
+                        - name: Create dir to restore cache
+                          run: mkdir target
+                        - name: Get artifact from cache
+                          uses: actions/cache@v3
+                          env:
+                                cache-name: cache-rm-app
+                          with:
+                                # note: the path used in the job that restores the cache has to be the same
+                                # as the path from which cache is uploaded - this is why we needed to create the target dir
+                                path: ./target/km-1.0.war
+                                key: latest-app-build-${{ github.run_id }}-${{ github.run_attempt }}
+
+                        - name: Sign in to Github container registry
+                          run: |
+                            echo $GHRC_ACCESS_TOKEN | docker login ghcr.io -u kommetio --password-stdin
+                          env:
+                            GHRC_ACCESS_TOKEN: ${{ secrets.GHRC_ACCESS_TOKEN }}
+
+                        - name: Pull Docker images
+                          run: |
+                              docker pull ghcr.io/kommetio/rm-tomcat:latest
+                              docker pull ghcr.io/kommetio/rm-db:latest
+                              docker pull ghcr.io/kommetio/rm-httpd:latest
+
+                        - name: Install platform
+                          run: |
+                              chmod 777 install.sh
+                              ./install.sh target/km-1.0.war "mockpwd" rm
+
+                        - name: Web health check
+                          run: |
+                              chmod 777 ./scripts/full-web-check.sh
+                              chmod 777 ./scripts/web-healthcheck.sh
+                              ./scripts/web-healthcheck.sh
+                              ./scripts/full-web-check.sh
+
+                        - name: Stop platform
+                          run: |
+                              chmod 777 stop.sh
+                              ./stop.sh
+                              chmod 777 scripts/test-stopped.sh
+                              ./scripts/test-stopped.sh
+
+                        - name: Restart platform
+                          run: |
+                              chmod 777 run.sh
+                              ./run.sh "mockpwd" rm
+
+                        # give Tomcat some time to start
+                        - name: Sleep for 10 seconds
+                          run: sleep 10s
+                          shell: bash
+
+                        - name: Web health check
+                          run: |
+                              ./scripts/web-healthcheck.sh
+                              ./scripts/full-web-check.sh

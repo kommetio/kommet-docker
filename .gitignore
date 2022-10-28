@@ -1,0 +1,6 @@
+/volumes/db/data
+/volumes/bin
+.DS_Store
+/images/collective/tomcat
+/images/collective/db
+/images/collective/*.war
