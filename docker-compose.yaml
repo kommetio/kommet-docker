@@ -15,7 +15,7 @@ services:
     container_name: $KM_APP_NAME-tomcat
     build: ./images/tomcat
     # the image name has to contain the ghrc.io/kommetio part because it is required for it to be pushed to container registry
-    image: ghcr.io/kommetio/rm-tomcat:latest
+    image: ghcr.io/kommetio/km-tomcat:latest
     volumes:
       - ${KM_VOLUME}/bin/km-1.0.war:/usr/local/tomcat/webapps/ROOT.war
       - ${KM_VOLUME}/tomcat/setenv.sh:/usr/local/tomcat/bin/setenv.sh
@@ -27,7 +27,7 @@ services:
   apache:
     container_name: $KM_APP_NAME-httpd
     build: ./images/httpd
-    image: ghcr.io/kommetio/rm-httpd:latest
+    image: ghcr.io/kommetio/km-httpd:latest
     volumes:
       - ${KM_VOLUME}/apache2/sites-enabled:/etc/apache2/sites-enabled
       - ${KM_VOLUME}/ssl:/home/ssl
@@ -38,7 +38,7 @@ services:
     container_name: $KM_APP_NAME-db
     restart: always
     build: ./images/psql
-    image: ghcr.io/kommetio/rm-db:latest
+    image: ghcr.io/kommetio/km-db:latest
     environment:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_USER=postgres
