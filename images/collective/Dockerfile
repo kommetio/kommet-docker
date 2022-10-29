@@ -35,7 +35,7 @@ ARG envid
 #RUN wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
 
 # install psql for testing purposes only - not needed for the app to work
-RUN apt-get update && apt-get install -y postgresql
+RUN apt-get update && apt-get install -y postgresql-13
 
 ADD db/scripts /home/db/scripts
 ADD db/dbtemplates /home/db/dbtemplates
