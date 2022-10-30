@@ -1,6 +1,6 @@
 name: Build image manually
 on:
-    workflow_dispatch:
+      workflow_dispatch:
         inputs:
             image_tag:
                 description: 'Tag to be applied to the DockerHub image'
