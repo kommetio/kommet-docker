@@ -5,7 +5,7 @@ on:
             image_tag:
                 description: 'Tag to be applied to the DockerHub image'
                 required: true
-        
+
 jobs:
         build-image:
                 runs-on: ubuntu-latest
