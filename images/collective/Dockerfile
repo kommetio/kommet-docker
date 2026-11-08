@@ -41,7 +41,7 @@ ADD db/scripts /home/db/scripts
 ADD db/dbtemplates /home/db/dbtemplates
 
 # enable peer auth for user postgres
-RUN sed -i -E 's/postgres(\s+)peer/postgres\1trust/' /etc/postgresql/13/main/pg_hba.conf
+RUN sed -i -E 's/postgres(\s+)peer/postgres\1trust/' /etc/postgresql/16/main/pg_hba.conf
 
 RUN chmod 755 /home/db/scripts/init.sh
 # run database initialization - the postgresql start command has to be chained with the script execution
