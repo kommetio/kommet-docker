@@ -1,4 +1,4 @@
-FROM tomcat:9.0.55-jdk11-openjdk
+FROM tomcat:11.0-jdk21-temurin
 
 LABEL maintainer="radek@raimme.com"
 
