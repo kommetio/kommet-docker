@@ -1,4 +1,4 @@
-FROM tomcat:11.0-jdk21-temurin-noble
+FROM tomcat:11.0-jdk25-temurin-noble
 
 LABEL maintainer="radek@raimme.com"
 
